@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unicodedata
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QPoint, Qt, QThread, Signal
 from PySide6.QtGui import QAction, QGuiApplication, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -27,10 +27,14 @@ from PySide6.QtWidgets import (
 
 from . import collectors, export
 from .icons import accent, app_pixmap, icon
-from .i18n import LANGS, LANG_NAMES, t
-from .model import Report
+from .i18n import LANGS, LANG_NAMES, has_key, t
+from .model import SUMMARY, Report, distinct_groups, group_fields, summary_field
 from .theme import STYLESHEET, level_color
 from .utils import human_datetime, num
+
+CARD_MIN_WIDTH = 430
+CARD_SPACING = 13
+CARD_MAX_COLS = 3
 
 
 def _fold(value: str) -> str:
@@ -42,6 +46,10 @@ def _match(query: str, *needles) -> bool:
     if not query:
         return True
     return any(query in _fold(needle) for needle in needles)
+
+
+def _group_label(value: str, lang: str) -> str:
+    return t(value, lang) if has_key(value) else value
 
 
 class CollectWorker(QThread):
@@ -93,29 +101,41 @@ class SectionCard(QFrame):
         super().__init__(parent)
         self.key = key
         self._lang = lang
+        self._icon_name = icon_name
+        self._row_index = 0
         self.setObjectName("Card")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 13, 16, 15)
-        root.setSpacing(11)
+        root.setSpacing(10)
 
         head = QHBoxLayout()
-        head.setSpacing(9)
-        self._dot = QLabel()
-        self._dot.setFixedSize(9, 9)
+        head.setSpacing(10)
+        self._badge = QLabel()
+        self._badge.setFixedSize(30, 30)
+        self._badge.setAlignment(Qt.AlignCenter)
+        self._badge.setPixmap(icon(icon_name, accent(icon_name), 30).pixmap(20, 20))
+        self._badge.setStyleSheet(
+            f"background: {accent(icon_name)}22; border-radius: 8px; border: 1px solid {accent(icon_name)}55;"
+        )
         self._title = QLabel(t(f"sec.{key}", lang))
         self._title.setObjectName("CardTitle")
         self._count = QLabel()
         self._count.setObjectName("CardCount")
-        head.addWidget(self._dot)
+        head.addWidget(self._badge)
         head.addWidget(self._title)
         head.addStretch(1)
         head.addWidget(self._count)
         root.addLayout(head)
 
+        self._rule = QFrame()
+        self._rule.setObjectName("CardRule")
+        self._rule.setFixedHeight(1)
+        root.addWidget(self._rule)
+
         self._grid = QGridLayout()
-        self._grid.setHorizontalSpacing(14)
-        self._grid.setVerticalSpacing(7)
+        self._grid.setHorizontalSpacing(16)
+        self._grid.setVerticalSpacing(8)
         self._grid.setColumnStretch(1, 1)
         root.addLayout(self._grid)
 
@@ -125,35 +145,46 @@ class SectionCard(QFrame):
         self._error.hide()
         root.addWidget(self._error)
 
-        self._rows: list[FieldRow] = []
-        self.set_icon(icon_name)
-
-    def set_icon(self, icon_name: str) -> None:
-        color = accent(icon_name)
-        self._dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
-        self._dot.setToolTip(icon_name)
-
     def clear_rows(self) -> None:
         while self._grid.count():
             item = self._grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-        self._rows.clear()
+        self._row_index = 0
+        self._last_group = ""
 
-    def add_row(self, row: FieldRow) -> None:
-        self._grid.addWidget(row, len(self._rows), 0, 1, 2)
-        self._rows.append(row)
+    def _add_group(self, name: str) -> None:
+        label = QLabel(_group_label(name, self._lang).upper())
+        label.setObjectName("GroupTitle")
+        self._grid.addWidget(label, self._row_index, 0, 1, 2)
+        self._row_index += 1
 
-    def set_count(self, shown: int, total: int) -> None:
-        if shown == total:
-            self._count.setText(t("section.count", self._lang).format(n=total))
-        else:
-            self._count.setText(f"{shown}/{total}")
+    def _add_row(self, field) -> None:
+        row = FieldRow(f"f.{field.key}", field.display(self._lang), field.level, self._lang)
+        self._grid.addWidget(row, self._row_index, 0, 1, 2)
+        self._row_index += 1
 
-    def set_error(self, message: str | None) -> None:
-        self._error.setText(message or "")
-        self._error.setVisible(bool(message))
+    def populate(self, fields, lang: str, total: int, error: str | None) -> None:
+        self._lang = lang
+        self.clear_rows()
+        self._last_group = ""
+        show_headers = len(distinct_groups(fields)) >= 2
+        for group, items in group_fields(fields):
+            if show_headers and group and group != self._last_group:
+                self._add_group(group)
+            self._last_group = group
+            for field in items:
+                self._add_row(field)
+        if not fields:
+            empty = QLabel(t("value.none", lang))
+            empty.setObjectName("CardEmpty")
+            self._grid.addWidget(empty, self._row_index, 0, 1, 2)
+        self._count.setText(
+            t("section.count", lang).format(n=total) if len(fields) == total else f"{len(fields)}/{total}"
+        )
+        self._error.setText(error or "")
+        self._error.setVisible(bool(error))
 
 
 class MainWindow(QMainWindow):
@@ -178,9 +209,8 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._build_header())
-
-        toolbar = self._build_toolbar()
-        root.addWidget(toolbar)
+        root.addWidget(self._build_toolbar())
+        root.addWidget(self._build_summary())
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -189,16 +219,32 @@ class MainWindow(QMainWindow):
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.container = QWidget()
-        self._cards_layout = QVBoxLayout(self.container)
-        self._cards_layout.setContentsMargins(20, 18, 20, 22)
-        self._cards_layout.setSpacing(13)
+        outer = QVBoxLayout(self.container)
+        outer.setContentsMargins(20, 16, 20, 22)
+        outer.setSpacing(14)
         self._empty = QLabel()
         self._empty.setObjectName("Empty")
         self._empty.setAlignment(Qt.AlignCenter)
-        self._cards_layout.addWidget(self._empty)
-        self._cards_layout.addStretch(1)
+        self._empty.setWordWrap(True)
+        outer.addWidget(self._empty)
+        self._flow_host = QWidget()
+        self._columns_layout = QHBoxLayout(self._flow_host)
+        self._columns_layout.setContentsMargins(0, 0, 0, 0)
+        self._columns_layout.setSpacing(CARD_SPACING)
+        self._column_layouts = []
+        for _ in range(CARD_MAX_COLS):
+            column = QWidget()
+            box = QVBoxLayout(column)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(CARD_SPACING)
+            box.addStretch(1)
+            column.hide()
+            self._columns_layout.addWidget(column, 1)
+            self._column_layouts.append(box)
+        outer.addWidget(self._flow_host)
+        outer.addStretch(1)
         self.scroll.setWidget(self.container)
         body.addWidget(self.scroll, 1)
         root.addLayout(body, 1)
@@ -206,6 +252,31 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.status_label = QLabel()
         self.statusBar().addWidget(self.status_label, 1)
+
+    def _build_summary(self) -> QWidget:
+        frame = QFrame()
+        frame.setObjectName("Summary")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(20, 12, 20, 13)
+        layout.setSpacing(10)
+        self._summary_chips = []
+        for field_key, label_key in SUMMARY:
+            chip = QFrame()
+            chip.setObjectName("Chip")
+            col = QVBoxLayout(chip)
+            col.setContentsMargins(13, 8, 13, 9)
+            col.setSpacing(1)
+            head = QLabel()
+            head.setObjectName("ChipKey")
+            value = QLabel()
+            value.setObjectName("ChipValue")
+            value.setWordWrap(True)
+            value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            col.addWidget(head)
+            col.addWidget(value)
+            self._summary_chips.append((field_key, label_key, head, value))
+            layout.addWidget(chip, 1)
+        return frame
 
     def _build_header(self) -> QWidget:
         frame = QFrame()
@@ -300,6 +371,7 @@ class MainWindow(QMainWindow):
         self._retranslate_menu()
         self._rebuild_sidebar()
         self._update_host_info()
+        self._update_summary()
         self._render()
 
     def _retranslate_menu(self) -> None:
@@ -355,7 +427,7 @@ class MainWindow(QMainWindow):
         card = self._cards.get(key)
         if card is None:
             return
-        top = card.geometry().top() - 12
+        top = card.mapTo(self.container, QPoint(0, 0)).y() - 12
         bar = self.scroll.verticalScrollBar()
         bar.setValue(max(0, min(top, bar.maximum())))
 
@@ -385,6 +457,45 @@ class MainWindow(QMainWindow):
         parts.append(human_datetime(self.report.generated_at, self.lang))
         self.host_info.setText(" &nbsp;·&nbsp; ".join(parts))
 
+    def _update_summary(self) -> None:
+        for field_key, label_key, head, value in self._summary_chips:
+            head.setText(t(label_key, self.lang).upper())
+            field = summary_field(self.report, field_key) if self.report is not None else None
+            text = field.display(self.lang) if field is not None else ""
+            value.setText(text or "\u2014")
+            value.setToolTip(text)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._layout_cards()
+
+    def _visible_order(self) -> list:
+        if self.report is None:
+            return []
+        return [self._cards[s.key] for s in self.report.sections if s.key in self._cards]
+
+    def _layout_cards(self) -> None:
+        if not self._cards or not getattr(self, "_column_layouts", None):
+            return
+        avail = max(CARD_MIN_WIDTH, self.scroll.viewport().width() - 40)
+        cols = max(1, min(CARD_MAX_COLS, int((avail + CARD_SPACING) // (CARD_MIN_WIDTH + CARD_SPACING))))
+        width = max(300, (avail - (cols - 1) * CARD_SPACING) // cols)
+
+        for box in self._column_layouts:
+            while box.count():
+                box.takeAt(0)
+
+        heights = [0] * CARD_MAX_COLS
+        for card in self._visible_order():
+            card.setFixedWidth(width)
+            index = min(range(cols), key=lambda i: heights[i])
+            self._column_layouts[index].addWidget(card)
+            heights[index] += card.sizeHint().height() + CARD_SPACING
+
+        for index, box in enumerate(self._column_layouts):
+            box.parentWidget().setVisible(index < cols)
+            box.addStretch(1)
+
     def _set_busy(self, busy: bool) -> None:
         self.refresh_btn.setEnabled(not busy)
         self.export_btn.setEnabled(not busy and self.report is not None)
@@ -409,6 +520,7 @@ class MainWindow(QMainWindow):
     def _on_collected(self, report: Report) -> None:
         self.report = report
         self._update_host_info()
+        self._update_summary()
         self._rebuild_sidebar()
         self.status_label.setText(
             t("status.elapsed", self.lang).format(s=num(report.duration, 2, self.lang))
@@ -430,6 +542,9 @@ class MainWindow(QMainWindow):
         ]
 
     def _render(self) -> None:
+        for box in self._column_layouts:
+            while box.count():
+                box.takeAt(0)
         for card in self._cards.values():
             card.setParent(None)
             card.deleteLater()
@@ -437,23 +552,19 @@ class MainWindow(QMainWindow):
 
         query = self.search.text().strip()
         if self.report is None:
+            self._flow_host.hide()
             self._empty.setText(t("empty.all", self.lang))
             self._empty.show()
             return
+        self._flow_host.show()
 
-        total_matches = 0
         for section in self.report.sections:
             rows = self._visible_fields(section)
             if query and not rows:
                 continue
-            total_matches += len(rows)
             card = SectionCard(section.key, section.icon, self.lang)
-            for item in rows:
-                card.add_row(FieldRow(f"f.{item.key}", item.display(self.lang), item.level, self.lang))
-            card.set_count(len(rows), len(section.fields))
-            card.set_error(section.error if not query else None)
+            card.populate(rows, self.lang, len(section.fields), section.error if not query else None)
             self._cards[section.key] = card
-            self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
         if not self._cards:
             self._empty.setText(
@@ -463,10 +574,8 @@ class MainWindow(QMainWindow):
         else:
             self._empty.hide()
 
-        if self._selected and self._selected in self._cards:
-            self.scroll.verticalScrollBar().setValue(0)
-        elif not self._selected:
-            self.scroll.verticalScrollBar().setValue(0)
+        self._layout_cards()
+        self.scroll.verticalScrollBar().setValue(0)
 
     def copy_report(self) -> None:
         if self.report is None:

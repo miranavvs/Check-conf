@@ -184,6 +184,7 @@ $o['usbDetail'] = @(Get-CimInstance Win32_PnPEntity -Filter "PNPDeviceID LIKE 'U
         "$sel = { param($n, $p, $ns) $c = Get-CimInstance -ClassName $n -Namespace $ns -ErrorAction SilentlyContinue | Select-Object -Property $p; $o[$n] = @($c) }\n"
         "& $sel 'Win32_OperatingSystem' @('Caption','Version','BuildNumber','OSArchitecture','InstallDate','LastBootUpTime','Locale','MUILanguages','TotalVisibleMemorySize','FreePhysicalMemory','TotalVirtualMemorySize','FreeVirtualMemory') 'root/cimv2'\n"
         "& $sel 'Win32_ComputerSystem' @('Manufacturer','Model','SystemType','TotalPhysicalMemory','HypervisorPresent','NumberOfProcessors','NumberOfLogicalProcessors','PCSystemType','SystemFamily') 'root/cimv2'\n"
+        "& $sel 'Win32_ComputerSystemProduct' @('Vendor','Name','Version','IdentifyingNumber','UUID') 'root/cimv2'\n"
         "& $sel 'Win32_Processor' @('Name','Manufacturer','NumberOfCores','NumberOfLogicalProcessors','MaxClockSpeed','CurrentClockSpeed','L2CacheSize','L3CacheSize','SocketDesignation','VirtualizationFirmwareEnabled','SecondLevelAddressTranslationExtensions','LoadPercentage','Architecture','AddressWidth') 'root/cimv2'\n"
         "& $sel 'Win32_PhysicalMemoryArray' @('MemoryDevices','MaxCapacity') 'root/cimv2'\n"
         "& $sel 'Win32_VideoController' @('Name','AdapterCompatibility','AdapterRAM','DriverVersion','DriverDate','PNPDeviceID','VideoProcessor','VideoModeDescription','CurrentHorizontalResolution','CurrentVerticalResolution','CurrentRefreshRate','CurrentBitsPerPixel','AdapterBusWidth','Status') 'root/cimv2'\n"

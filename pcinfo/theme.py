@@ -185,6 +185,26 @@ QScrollBar::handle:horizontal {{
     min-width: 30px;
 }}
 
+QFrame#Summary {{
+    background: {SURFACE};
+    border-bottom: 1px solid {BORDER};
+}}
+QFrame#Chip {{
+    background: {BG};
+    border: 1px solid {BORDER};
+    border-radius: 9px;
+}}
+QLabel#ChipKey {{
+    color: {MUTED};
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}}
+QLabel#ChipValue {{
+    color: {TEXT};
+    font-size: 13px;
+    font-weight: 600;
+}}
 QFrame#Card {{
     background: {SURFACE};
     border: 1px solid {BORDER};
@@ -200,6 +220,22 @@ QLabel#CardCount {{
     background: {SURFACE_ALT};
     border-radius: 8px;
     padding: 2px 8px;
+}}
+QFrame#CardRule {{
+    background: {BORDER};
+    border: none;
+}}
+QLabel#GroupTitle {{
+    color: {ACCENT};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding-top: 9px;
+    padding-bottom: 1px;
+}}
+QLabel#CardEmpty {{
+    color: {MUTED};
+    font-size: 12px;
 }}
 QLabel#FieldKey {{
     color: {MUTED};

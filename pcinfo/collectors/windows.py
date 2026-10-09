@@ -59,12 +59,20 @@ def system(report: Report, deep: bool) -> Section:
     os_info = win.first("Win32_OperatingSystem")
     reg_os = win.first("regOs")
     machine = win.first("Win32_ComputerSystem")
+    product = win.first("Win32_ComputerSystemProduct")
     tz = win.SNAPSHOT.get("tz") or {}
     lang = report.lang
 
     report.hostname = os.environ.get("COMPUTERNAME") or platform.node()
     report.os_label = win.text(os_info.get("Caption")) or win.text(reg_os.get("ProductName"))
+    reg_bios = win.first("regBios")
+    sec.group("grp.identity")
+    sec.add("pc.manu", win.text(product.get("Vendor")) or win.text(machine.get("Manufacturer")))
+    sec.add("pc.brand", win.text(product.get("Name")) or win.text(machine.get("Model")))
+    sec.add("pc.version", win.text(product.get("Version")) or win.text(machine.get("SystemFamily")))
+    sec.add("pc.ref", win.text(reg_bios.get("SystemSKU")) or win.text(product.get("IdentifyingNumber")))
     sec.add("hostname", report.hostname)
+    sec.group("grp.os")
     sec.add("os", report.os_label)
     sec.add("os.version", os_info.get("Version"))
     sec.add("os.build", f"{win.text(os_info.get('BuildNumber'))}.{win.text(reg_os.get('UBR'))}".strip("."))
@@ -74,15 +82,16 @@ def system(report: Report, deep: bool) -> Section:
         "edition",
         " - ".join(part for part in (win.text(reg_os.get("EditionID")), win.text(reg_os.get("DisplayVersion"))) if part),
     )
+    installed = win.datetime_value(os_info.get("InstallDate"))
+    if installed:
+        sec.add("install", human_datetime(installed, lang))
+    sec.group("grp.session")
     sec.add("user", os.environ.get("USERNAME") or os.environ.get("USER"))
     sec.add("shell", os.path.basename(os.environ.get("COMSPEC", "")) or None)
     add_typed(sec, "uptime", win.uptime() or None, "duration")
     boot = win.last_boot()
     if boot:
         sec.add("boot", human_datetime(boot, lang))
-    installed = win.datetime_value(os_info.get("InstallDate"))
-    if installed:
-        sec.add("install", human_datetime(installed, lang))
     sec.add("locale", " / ".join(part for part in (win.text(win.SNAPSHOT.get("culture")), win.text(win.SNAPSHOT.get("cultureSys"))) if part))
     if isinstance(tz, dict) and tz.get("Id"):
         offset = win.text(tz.get("Offset"))
@@ -111,10 +120,12 @@ def cpu(report: Report, deep: bool) -> Section:
     for index, row in enumerate(cores):
         name = win.text(row.get("Name")) or win.text(win.first("regCpu").get("ProcessorNameString"))
         if index == 0:
+            sec.group("grp.cpu.chip")
             sec.add("cpu.name", name)
             add_typed(sec, "cpu.cores", row.get("NumberOfCores"), "int")
             add_typed(sec, "cpu.logical", row.get("NumberOfLogicalProcessors"), "int")
             add_typed(sec, "cpu.sockets", len(cores), "int")
+            sec.group("grp.cpu.clock")
             add_typed(sec, "cpu.base", megahertz(row.get("CurrentClockSpeed")), "hz")
             add_typed(sec, "cpu.max", megahertz(row.get("MaxClockSpeed")), "hz")
             l2 = kilobytes(row.get("L2CacheSize"))
@@ -123,15 +134,19 @@ def cpu(report: Report, deep: bool) -> Section:
             add_typed(sec, "cpu.l3", l3, "bytes")
             if l2 and l3:
                 add_typed(sec, "cpu.cache", l2 + l3, "bytes")
+            sec.group("grp.cpu.features")
             add_bool(sec, "cpu.virt", row.get("VirtualizationFirmwareEnabled"))
             add_bool(sec, "cpu.smt", row.get("SecondLevelAddressTranslationExtensions"))
+            sec.group("grp.cpu.load")
             usage = win.number(row.get("LoadPercentage"))
             if usage is None and total_load:
                 usage = round(sum(total_load) / len(total_load), 1)
             add_typed(sec, "cpu.usage", usage, "percent")
         else:
+            sec.group("grp.cpu.chip")
             sec.add("cpu.name", name)
     if len(total_load) > 1:
+        sec.group("grp.cpu.load")
         sec.add("cpu.percore", " / ".join(str(int(value)) for value in total_load))
     return sec
 
@@ -155,6 +170,7 @@ def memory(report: Report, deep: bool) -> Section:
     available = kilobytes(os_info.get("FreePhysicalMemory")) or 0.0
     used = max(0.0, usable - available)
 
+    sec.group("grp.mem.main")
     add_typed(sec, "mem.total", installed, "bytes")
     add_typed(sec, "mem.used", used, "bytes")
     add_typed(sec, "mem.avail", available, "bytes")
@@ -163,9 +179,10 @@ def memory(report: Report, deep: bool) -> Section:
     add_typed(sec, "mem.usedslots", len(modules) if modules else None, "int")
 
     if deep and modules:
-        for module in modules:
+        for index, module in enumerate(modules):
             part = win.text(module.get("PartNumber"))
             vendor = win.text(module.get("Manufacturer"))
+            sec.group(part or vendor or f"{t('grp.mem.module', report.lang)} {index + 1}")
             sec.add("mem.module", part or vendor or t("value.unknown", report.lang))
             sec.add("mem.slot", win.text(module.get("DeviceLocator")) or win.text(module.get("BankLabel")))
             add_typed(sec, "mem.cap", win.number(module.get("Capacity")), "bytes")
@@ -178,8 +195,10 @@ def memory(report: Report, deep: bool) -> Section:
     swap_total = sum(megabytes_to_bytes(row.get("AllocatedBaseSize")) or 0.0 for row in win.rows("Win32_PageFileUsage"))
     swap_used = sum(megabytes_to_bytes(row.get("CurrentUsage")) or 0.0 for row in win.rows("Win32_PageFileUsage"))
     if swap_total:
+        sec.group("grp.mem.swap")
         add_typed(sec, "swap.total", swap_total, "bytes")
         add_typed(sec, "swap.used", swap_used, "bytes")
+        sec.group()
     return sec
 
 
@@ -188,6 +207,7 @@ def gpu(report: Report, deep: bool) -> Section:
     controllers = win.rows("Win32_VideoController")
     add_typed(sec, "gpu.count", len(controllers) or None, "int")
     for row in controllers:
+        sec.group(win.text(row.get("Name")) or t("value.unknown", report.lang))
         sec.add("gpu.name", win.text(row.get("Name")))
         sec.add("gpu.vendor", win.text(row.get("AdapterCompatibility")))
         add_typed(sec, "gpu.vram", win.number(row.get("AdapterRAM")), "bytes")
@@ -212,6 +232,7 @@ def sound(report: Report, deep: bool) -> Section:
     devices = win.rows("Win32_SoundDevice")
     add_typed(sec, "sound.count", len(devices) or None, "int")
     for row in devices:
+        sec.group(win.text(row.get("Name")) or t("value.unknown", report.lang))
         sec.add("sound.name", win.text(row.get("Name")))
         sec.add("sound.vendor", win.text(row.get("Manufacturer")) or win.text(row.get("ProductName")))
         info = _STATUS_INFO.get(win.integer(row.get("StatusInfo"), -1), "")
@@ -260,6 +281,7 @@ def disk(report: Report, deep: bool) -> Section:
         model = win.text(row.get("Model"))
         extra = msft.get(index, {})
         media = physical.get(model, {})
+        sec.group(model or f"{t('grp.disk.device', report.lang)} {index + 1}")
         sec.add("disk.model", model)
         add_typed(sec, "disk.size", win.number(row.get("Size")), "bytes")
         bus = win.BUS_TYPES.get(win.integer(extra.get("BusType"), -1), "")
@@ -286,7 +308,10 @@ def partitions(report: Report, deep: bool) -> Section:
             continue
         size = win.number(row.get("Size"))
         free = win.number(row.get("FreeSpace"))
-        sec.add("part.label", win.text(row.get("DeviceID")))
+        device = win.text(row.get("DeviceID"))
+        volume = win.text(row.get("VolumeName"))
+        sec.group(f"{device} — {volume}" if volume else device or t("value.unknown", report.lang))
+        sec.add("part.label", device)
         sec.add("part.fs", win.text(row.get("FileSystem")))
         add_typed(sec, "part.size", size, "bytes")
         add_typed(sec, "part.free", free, "bytes")
@@ -317,6 +342,7 @@ def network(report: Report, deep: bool) -> Section:
     for row in adapters:
         name = win.text(row.get("Name"))
         index = win.integer(row.get("ifIndex"), -1)
+        sec.group(name or win.text(row.get("InterfaceDescription")) or t("value.unknown", lang))
         sec.add("net.adapter", name or win.text(row.get("InterfaceDescription")))
         sec.add("net.type", win.NET_IF_TYPES.get(win.integer(row.get("InterfaceType"), -1)) or win.text(row.get("InterfaceDescription")) or t("value.unknown", lang))
         sec.add("net.mac", win.mac(row.get("MacAddress")))
@@ -363,6 +389,7 @@ def wifi(report: Report, deep: bool) -> Section:
         return sec
 
     for entry in interfaces:
+        sec.group(entry.get("ssid") or t("value.unknown", lang))
         sec.add("wifi.ssid", entry.get("ssid"))
         sec.add("wifi.bssid", win.mac(entry.get("bssid")))
         sec.add("wifi.adapter", entry.get("description"))
@@ -377,6 +404,7 @@ def wifi(report: Report, deep: bool) -> Section:
         state = win.text(entry.get("state"))
         sec.add("wifi.status", state, level=LEVEL_INFO if state.casefold() == "connected" else LEVEL_WARN)
     if deep:
+        sec.group("grp.wifi.known")
         add_typed(sec, "wifi.known", win.known_profiles() or None, "int")
     return sec
 
@@ -399,6 +427,7 @@ def display(report: Report, deep: bool) -> Section:
                 for part in (win.wmi_chars(monitor.get("ManufacturerName")), win.wmi_chars(monitor.get("ProductCodeID")))
                 if part
             )
+        sec.group(name or t("value.unknown", lang))
         sec.add("disp.name", name or t("value.unknown", lang))
 
         best = None
@@ -504,6 +533,7 @@ def battery(report: Report, deep: bool) -> Section:
     cycles = sum(win.integer(row.get("CycleCount")) for row in win.rows("batCycle"))
 
     for row in packs:
+        sec.group(win.text(row.get("Name")) or t("value.unknown", lang))
         sec.add("batt.name", win.text(row.get("Name")))
         add_typed(sec, "batt.level", win.number(row.get("EstimatedChargeRemaining")), "percent")
         status = win.integer(row.get("BatteryStatus"), -1)
@@ -519,6 +549,8 @@ def battery(report: Report, deep: bool) -> Section:
             sec.add("batt.tech", chemistry)
 
     millivolts = _mean_voltage(packs, status_rows)
+    if full or design:
+        sec.group("grp.batt.capacity")
     if full:
         add_typed(sec, "batt.energy", full / 1000.0, "wh")
         add_typed(sec, "batt.full", _mah(full, millivolts) or full / 1000.0, "mah")
@@ -582,6 +614,7 @@ def temp(report: Report, deep: bool) -> Section:
                 text += f" ({t('f.temp.critical_at', lang)} {reading('temp', critical, lang)})"
             return text
 
+        sec.group(f"{name} ({detail})" if detail else name)
         add_sentence(sec, "temp.name", render)
 
     if not sensors:
@@ -595,6 +628,7 @@ def usb(report: Report, deep: bool) -> Section:
     devices = win.rows("usbDetail")
     add_typed(sec, "usb.count", len(devices) or None, "int")
     for row in devices:
+        sec.group(win.text(row.get("Name")) or t("value.unknown", lang))
         sec.add("usb.name", win.text(row.get("Name")))
         sec.add("usb.vendor", win.text(row.get("Manufacturer")))
         cls = win.text(row.get("PNPClass"))
