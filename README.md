@@ -50,9 +50,10 @@ Windows 10 or 11, Python 3.10 or newer when running from source.
 | Python source | Yes | Yes |
 | `dist\check-conf.exe` | Yes | No |
 
-The published executable is a **64-bit Intel build only**, because PyInstaller's
-Windows bootloader that this project embeds is `Windows-64bit-intel`. On an
-ARM64 machine (Snapdragon, etc.) the `.exe` will not run.
+The published executable is a **64-bit x86-64 (AMD64) build**. PyInstaller ships
+that bootloader under the name `Windows-64bit-intel`, which refers to the
+architecture (x86-64), not to the CPU vendor — it runs on both Intel and AMD
+(Ryzen) machines. It will not run on an ARM64 machine (Snapdragon, etc.).
 
 To get an ARM64 build, run the source directly on that machine, or rebuild there
 with a matching ARM64 Python: PyInstaller emits a build for the interpreter it
@@ -62,7 +63,7 @@ and PowerShell, both of which behave the same on either architecture.
 
 Note that the app reports the *host* architecture in the System section, reading
 `OSArchitecture` from WMI, so an ARM64 run still correctly shows the host value
-and never assumes 64-bit Intel.
+and never assumes x86-64.
 
 ## Install
 

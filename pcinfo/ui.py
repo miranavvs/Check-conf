@@ -27,7 +27,16 @@ from PySide6.QtWidgets import (
 
 from . import collectors, export
 from .icons import accent, app_pixmap, icon
-from .i18n import LANGS, LANG_NAMES, has_key, t
+from .i18n import (
+    APP_AUTHOR,
+    APP_DATE,
+    APP_LICENSE,
+    APP_VERSION,
+    LANGS,
+    LANG_NAMES,
+    has_key,
+    t,
+)
 from .model import SUMMARY, Report, distinct_groups, group_fields, summary_field
 from .theme import STYLESHEET, level_color
 from .utils import human_datetime, num
@@ -406,6 +415,36 @@ class MainWindow(QMainWindow):
             action.setChecked(code == self.lang)
             action.triggered.connect(lambda _checked=False, c=code: self.set_lang(c))
             view_menu.addAction(action)
+
+        help_menu = menu.addMenu(t("menu.help", self.lang))
+        about_action = QAction(t("menu.about", self.lang), self)
+        about_action.setShortcut(QKeySequence("F1"))
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
+    def show_about(self) -> None:
+        rows = (
+            (t("about.version", self.lang), APP_VERSION),
+            (t("about.date", self.lang), APP_DATE),
+            (t("about.author", self.lang), APP_AUTHOR),
+            (t("about.license", self.lang), APP_LICENSE),
+        )
+        meta = "<br>".join(f"<b>{name} :</b> {value}" for name, value in rows)
+        text = (
+            f"<h3>{t('app.name', self.lang)}</h3>"
+            f"<p>{t('app.subtitle', self.lang)}</p>"
+            f"<p>{t('about.desc', self.lang)}</p>"
+            f"<p>{meta}</p>"
+        )
+        box = QMessageBox(self)
+        box.setWindowTitle(t("about.title", self.lang))
+        box.setIconPixmap(
+            app_pixmap(64).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        )
+        box.setTextFormat(Qt.RichText)
+        box.setText(text)
+        box.setStandardButtons(QMessageBox.Ok)
+        box.exec()
 
     def _rebuild_sidebar(self) -> None:
         self.sidebar.blockSignals(True)

@@ -6,7 +6,7 @@ import sys
 from PySide6.QtCore import QLocale
 from PySide6.QtWidgets import QApplication
 
-from pcinfo.i18n import DEFAULT_LANG, LANGS
+from pcinfo.i18n import APP_VERSION, DEFAULT_LANG, LANGS
 from pcinfo.ui import MainWindow
 
 
@@ -28,6 +28,7 @@ def main() -> int:
     QLocale.setDefault(QLocale(lang))
     app.setApplicationName("check-conf")
     app.setApplicationDisplayName("CheckConf — Config PC")
+    app.setApplicationVersion(APP_VERSION)
 
     window = MainWindow(lang=lang)
     window.show()

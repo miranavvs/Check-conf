@@ -5,9 +5,34 @@ LANGS = ('fr', 'en')
 LANG_NAMES = {'fr': 'Fran\u00e7ais', 'en': 'English'}
 _INDEX = {'fr': 0, 'en': 1}
 
+APP_VERSION = '1.0'
+APP_DATE = '10/10/2026'
+APP_AUTHOR = 'Mirana Vivien'
+APP_LICENSE = 'MIT'
+
 STRINGS = {
     'app.name': ('CheckConf \u2014 Config PC', 'CheckConf \u2014 PC Config'),
     'app.subtitle': ('Rapport mat\u00e9riel d\u00e9taill\u00e9', 'Detailed hardware report'),
+    'menu.help': ('&Aide', '&Help'),
+    'menu.about': ('\u00c0 propos', 'About'),
+    'about.title': ('\u00c0 propos de CheckConf', 'About CheckConf'),
+    'about.version': ('Version', 'Version'),
+    'about.date': ('Date', 'Date'),
+    'about.author': ('Auteur', 'Author'),
+    'about.license': ('Licence', 'License'),
+    'about.desc': (
+        "CheckConf r\u00e9alise un inventaire complet du mat\u00e9riel et du syst\u00e8me "
+        "Windows \u2014 processeur, m\u00e9moire, carte graphique, disques, r\u00e9seau, Wi-Fi, "
+        "\u00e9crans, batterie, temp\u00e9ratures et charge syst\u00e8me \u2014 en 15 sections "
+        "et environ 6 secondes. Les rapports s'exportent en texte, JSON ou HTML. "
+        "\u00c9crit en Python avec PySide6, sans droits administrateur ni appel r\u00e9seau : "
+        "tout est lu localement.",
+        "CheckConf builds a full inventory of the Windows hardware and system "
+        "\u2014 processor, memory, graphics, disks, network, Wi-Fi, displays, battery, "
+        "temperatures and system load \u2014 across 15 sections in about 6 seconds. "
+        "Reports export to text, JSON or HTML. Built with Python and PySide6, with no "
+        "admin rights and no network calls: everything is read locally.",
+    ),
     'search.ph': ('Rechercher un champ\u2026', 'Search a field\u2026'),
     'toolbar.refresh': ('Actualiser', 'Refresh'),
     'toolbar.export': ('Exporter', 'Export'),
